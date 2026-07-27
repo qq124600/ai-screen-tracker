@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Screen Tracker — 智能屏幕人物捕捉跟随工具</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a14;
+            --bg-secondary: #0f0f1a;
+            --bg-card: #12121f;
+            --border: #1f1f33;
+            --text-primary: #c0caf5;
+            --text-secondary: #7f849c;
+            --text-muted: #585b70;
+            --accent-blue: #7aa2f7;
+            --accent-purple: #9d7cd8;
+            --accent-red: #f38ba8;
+            --accent-green: #40f040;
+            --accent-cyan: #38bdf8;
+            --gradient-hero: linear-gradient(135deg, #1a1a3e 0%, #0a0a14 40%, #1a1a2e 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ── 粒子画布 ── */
+        #particles {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none;
+        }
+        .content-layer { position: relative; z-index: 1; }
+
+        /* ── 导航 ── */
+        nav {
+            position: fixed; top: 0; width: 100%; z-index: 1000;
+            background: rgba(10, 10, 20, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 0;
+        }
+        .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px;
+        }
+        .nav-logo {
+            font-size: 18px; font-weight: 700; color: #fff;
+            letter-spacing: 1px;
+        }
+        .nav-logo span { color: var(--accent-blue); }
+        .nav-links { display: flex; gap: 28px; list-style: none; }
+        .nav-links a {
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 14px; transition: color 0.2s;
+        }
+        .nav-links a:hover { color: #fff; }
+
+        /* ── Hero ── */
+        .hero {
+            min-height: 100vh; display: flex; align-items: center;
+            justify-content: center; text-align: center;
+            background: var(--gradient-hero);
+            padding: 100px 24px 60px;
+            position: relative; overflow: hidden;
+        }
+        .hero::before {
+            content: ''; position: absolute;
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(122,162,247,0.08) 0%, transparent 70%);
+            top: -100px; right: -100px;
+        }
+        .hero::after {
+            content: ''; position: absolute;
+            width: 400px; height: 400px;
+            background: radial-gradient(circle, rgba(157,124,216,0.06) 0%, transparent 70%);
+            bottom: -50px; left: -50px;
+        }
+        .hero-content { position: relative; z-index: 1; max-width: 700px; }
+        .hero-badge {
+            display: inline-block; padding: 6px 16px;
+            background: rgba(122,162,247,0.1); border: 1px solid rgba(122,162,247,0.2);
+            border-radius: 20px; font-size: 13px; color: var(--accent-blue);
+            margin-bottom: 24px;
+        }
+        .hero h1 {
+            font-size: 48px; font-weight: 800; margin-bottom: 16px;
+            color: #fff; line-height: 1.2;
+        }
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 18px; color: var(--text-secondary);
+            margin-bottom: 32px; max-width: 540px; margin-left: auto; margin-right: auto;
+        }
+        .hero-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .btn-primary {
+            padding: 14px 32px; border-radius: 8px; border: none;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            background: var(--accent-blue); color: #fff;
+            transition: all 0.2s; text-decoration: none; display: inline-block;
+        }
+        .btn-primary:hover { background: #5a82e7; transform: translateY(-1px); }
+        .btn-outline {
+            padding: 14px 32px; border-radius: 8px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            background: transparent; color: var(--text-primary);
+            border: 1px solid var(--border);
+            transition: all 0.2s; text-decoration: none; display: inline-block;
+        }
+        .btn-outline:hover { border-color: var(--text-secondary); }
+        .scroll-hint {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            animation: bounce 2s infinite;
+        }
+        .scroll-hint span {
+            display: block; width: 24px; height: 24px;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: rotate(45deg);
+        }
+        @keyframes bounce {
+            0%, 100% { opacity: 0.4; transform: translateX(-50%) translateY(0); }
+            50% { opacity: 1; transform: translateX(-50%) translateY(8px); }
+        }
+
+        /* ── 通用 section ── */
+        section { padding: 80px 24px; }
+        .section-inner { max-width: 1100px; margin: 0 auto; }
+        .section-title {
+            text-align: center; font-size: 32px; font-weight: 700;
+            color: #fff; margin-bottom: 12px;
+        }
+        .section-subtitle {
+            text-align: center; color: var(--text-secondary);
+            font-size: 16px; margin-bottom: 48px;
+        }
+
+        /* ── 特性卡片 ── */
+        .features-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .feature-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 28px; transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: rgba(122,162,247,0.3);
+            transform: translateY(-2px);
+        }
+        .feature-icon {
+            width: 48px; height: 48px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; margin-bottom: 16px;
+        }
+        .feature-card h3 { font-size: 17px; color: #fff; margin-bottom: 8px; }
+        .feature-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+        .icon-blue { background: rgba(122,162,247,0.12); color: var(--accent-blue); }
+        .icon-purple { background: rgba(157,124,216,0.12); color: var(--accent-purple); }
+        .icon-cyan { background: rgba(56,189,248,0.12); color: var(--accent-cyan); }
+        .icon-red { background: rgba(243,139,168,0.12); color: var(--accent-red); }
+        .icon-green { background: rgba(64,240,64,0.12); color: var(--accent-green); }
+
+        /* ── 锁定模式 ── */
+        .modes-row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        .mode-card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; width: 220px; text-align: center;
+            transition: all 0.3s;
+        }
+        .mode-card:hover { border-color: rgba(157,124,216,0.3); }
+        .mode-card .mode-icon { font-size: 36px; margin-bottom: 12px; }
+        .mode-card h4 { color: #fff; margin-bottom: 6px; }
+        .mode-card p { color: var(--text-muted); font-size: 13px; }
+
+        /* ── 游戏支持 ── */
+        .games-grid {
+            display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+        }
+        .game-tag {
+            padding: 8px 16px; border-radius: 6px;
+            background: rgba(122,162,247,0.06); border: 1px solid var(--border);
+            font-size: 13px; color: var(--text-secondary); transition: all 0.2s;
+        }
+        .game-tag:hover {
+            border-color: var(--accent-blue);
+            background: rgba(122,162,247,0.1);
+            color: #fff;
+        }
+
+        /* ── CTA ── */
+        .cta {
+            background: linear-gradient(135deg, rgba(122,162,247,0.05), rgba(157,124,216,0.05));
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            text-align: center;
+        }
+        .cta h2 { color: #fff; font-size: 28px; margin-bottom: 12px; }
+        .cta p { color: var(--text-secondary); margin-bottom: 28px; }
+
+        /* ── 页脚 ── */
+        footer {
+            text-align: center; padding: 40px 24px;
+            color: var(--text-muted); font-size: 13px;
+            border-top: 1px solid var(--border);
+        }
+        footer a { color: var(--text-secondary); text-decoration: none; }
+        footer a:hover { color: #fff; }
+
+        /* ── 响应式 ── */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 32px; }
+            .hero p { font-size: 15px; }
+            .nav-links { gap: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══ 粒子背景 ═══ -->
+<canvas id="particles"></canvas>
+
+<div class="content-layer">
+
+<!-- ═══════════════ 导航 ═══════════════ -->
+<nav>
+    <div class="nav-inner">
+        <div class="nav-logo"><span>AI</span> Tracker</div>
+        <ul class="nav-links">
+            <li><a href="#features">功能</a></li>
+            <li><a href="#modes">模式</a></li>
+            <li><a href="#games">游戏支持</a></li>
+            <li><a href="#download">下载</a></li>
+        </ul>
+    </div>
+</nav>
+
+<!-- ═══════════════ Hero ═══════════════ -->
+<section class="hero">
+    <div class="hero-content">
+        <div class="hero-badge">v2.0 · 全新卡密激活系统</div>
+        <h1>
+            智能 <span class="gradient">AI 屏幕捕捉</span><br>
+            精准跟随人物
+        </h1>
+        <p>
+            基于 HOG + 模板匹配技术，自动识别屏幕中的人物并实时跟随鼠标。
+            支持锁头、锁甲、全身锁三种模式，适配 80+ 热门游戏。
+        </p>
+        <div class="hero-btns">
+            <a href="#download" class="btn-primary">获取工具</a>
+            <a href="#features" class="btn-outline">了解更多</a>
+        </div>
+    </div>
+    <div class="scroll-hint"><span></span></div>
+</section>
+
+<!-- ═══════════════ 核心功能 ═══════════════ -->
+<section id="features">
+    <div class="section-inner">
+        <h2 class="section-title">核心功能</h2>
+        <p class="section-subtitle">为精确操作打造的一体化视觉辅助工具</p>
+        <div class="features-grid">
+
+            <div class="feature-card">
+                <div class="feature-icon icon-blue">🎯</div>
+                <h3>AI 人体检测</h3>
+                <p>HOG 行人检测算法，快速识别屏幕中的人物目标。按住左键即可自动捕捉并开始跟随，松开即取消。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon icon-purple">🔍</div>
+                <h3>三种锁定模式</h3>
+                <p>锁头模式锁定头部区域、锁甲模式锁定躯干、全身锁跟踪完整人形。一键切换，精准定位。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon icon-cyan">⚡</div>
+                <h3>实时追踪</h3>
+                <p>模板匹配 + 运动预测算法，平滑鼠标移动，最大 800px 搜索半径，跟上高速移动目标。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon icon-red">🔐</div>
+                <h3>卡密激活系统</h3>
+                <p>一机一码加密绑定，三重验证机制。卡密到期自动锁定，为授权用户提供安全保障。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon icon-green">🖥</div>
+                <h3>智能进程识别</h3>
+                <p>自动扫描任务栏中运行的游戏与娱乐程序，支持 Steam、Epic、WeGame 等主流平台。</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon icon-blue">🎛</div>
+                <h3>沉浸式浮动菜单</h3>
+                <p>暗色主题悬浮窗口，实时显示 FPS、追踪状态。F7 一键隐藏/呼出，不遮挡游戏画面。</p>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ═══════════════ 锁定模式 ═══════════════ -->
+<section id="modes" style="background: var(--bg-secondary);">
+    <div class="section-inner">
+        <h2 class="section-title">三种锁定模式</h2>
+        <p class="section-subtitle">点击切换，即时生效</p>
+        <div class="modes-row">
+            <div class="mode-card">
+                <div class="mode-icon">🧠</div>
+                <h4>锁头模式</h4>
+                <p>聚焦头部上方 28% 区域<br>适合精确瞄准场景</p>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon">🛡️</div>
+                <h4>锁甲模式</h4>
+                <p>锁定躯干 20%~65% 区域<br>稳定跟踪上半身</p>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon">🧍</div>
+                <h4>全身模式</h4>
+                <p>跟踪完整人体轮廓<br>通用性最强</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══════════════ 游戏支持 ═══════════════ -->
+<section id="games">
+    <div class="section-inner">
+        <h2 class="section-title">广泛游戏支持</h2>
+        <p class="section-subtitle">自动识别 80+ 热门游戏与主流平台</p>
+        <div class="games-grid">
+            <span class="game-tag">CS2 / CSGO</span>
+            <span class="game-tag">VALORANT</span>
+            <span class="game-tag">PUBG</span>
+            <span class="game-tag">Apex 英雄</span>
+            <span class="game-tag">使命召唤</span>
+            <span class="game-tag">彩虹六号</span>
+            <span class="game-tag">守望先锋 2</span>
+            <span class="game-tag">战地 2042</span>
+            <span class="game-tag">GTA5</span>
+            <span class="game-tag">荒野大镖客 2</span>
+            <span class="game-tag">命运 2</span>
+            <span class="game-tag">Warframe</span>
+            <span class="game-tag">英雄联盟</span>
+            <span class="game-tag">Dota 2</span>
+            <span class="game-tag">穿越火线</span>
+            <span class="game-tag">三角洲行动</span>
+            <span class="game-tag">原神</span>
+            <span class="game-tag">崩坏:星穹铁道</span>
+            <span class="game-tag">绝区零</span>
+            <span class="game-tag">鸣潮</span>
+            <span class="game-tag">永劫无间</span>
+            <span class="game-tag">艾尔登法环</span>
+            <span class="game-tag">赛博朋克 2077</span>
+            <span class="game-tag">巫师 3</span>
+            <span class="game-tag">只狼</span>
+            <span class="game-tag">我的世界</span>
+            <span class="game-tag">极限竞速:地平线</span>
+            <span class="game-tag">FIFA</span>
+            <span class="game-tag">NBA 2K</span>
+            <span class="game-tag">怪物猎人</span>
+            <span class="game-tag">Steam 平台</span>
+            <span class="game-tag">Epic Games</span>
+            <span class="game-tag">WeGame</span>
+            <span class="game-tag">雷电模拟器</span>
+            <span class="game-tag">BlueStacks</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══════════════ 下载 / CTA ═══════════════ -->
+<section id="download" class="cta">
+    <div class="section-inner">
+        <h2>立即使用 AI Screen Tracker</h2>
+        <p>需要有效卡密才能激活。获取卡密后运行程序，输入即可激活。</p>
+        <a href="#" class="btn-primary" onclick="alert('请联系管理员获取程序包和卡密')">📥 下载程序</a>
+    </div>
+</section>
+
+<!-- ═══════════════ 页脚 ═══════════════ -->
+<footer>
+    <p>
+        © 2026 <strong>AI Screen Tracker</strong> · 作者: 画地为牢<br>
+        <span style="color: var(--text-muted); font-size: 12px;">
+            本程序仅用于技术交流与学习研究，请遵守相关法律法规。
+        </span>
+    </p>
+</footer>
+
+</div><!-- /.content-layer -->
+
+<!-- ═══════════════ 粒子特效 ═══════════════ -->
+<script>
+(function() {
+    const canvas = document.getElementById('particles');
+    const ctx = canvas.getContext('2d');
+    let W, H, particles = [], mouse = { x: -999, y: -999 };
+
+    function resize() {
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = document.documentElement.scrollHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // ── 粒子类 ──
+    class Particle {
+        constructor() {
+            this.reset();
+            this.y = Math.random() * H;
+        }
+        reset() {
+            this.x = Math.random() * W;
+            this.y = -10;
+            this.z = Math.random() * 2 + 0.5;       // 大小层级
+            this.vx = (Math.random() - 0.5) * 0.4;
+            this.vy = Math.random() * 0.5 + 0.2;
+            this.life = 1;
+            this.fade = 0.001 + Math.random() * 0.003;
+            this.hue = Math.random() > 0.5 ? 217 : 260; // blue / purple
+            this.opacity = Math.random() * 0.5 + 0.15;
+        }
+        update() {
+            this.x += this.vx;
+            this.y += this.vy * this.z;
+            this.life -= this.fade;
+            if (this.y > H + 40 || this.life <= 0) this.reset();
+        }
+        draw() {
+            const r = this.z * 2.2;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${this.hue}, 70%, 65%, ${this.opacity * this.life})`;
+            ctx.fill();
+
+            // 辉光
+            const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 3);
+            grd.addColorStop(0, `hsla(${this.hue}, 80%, 70%, ${0.12 * this.life})`);
+            grd.addColorStop(1, 'transparent');
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, r * 3, 0, Math.PI * 2);
+            ctx.fillStyle = grd;
+            ctx.fill();
+        }
+    }
+
+    // ── 飘浮光点 (较大较亮) ──
+    class Orb {
+        constructor() {
+            this.reset(true);
+        }
+        reset(init) {
+            this.x = Math.random() * W;
+            this.y = init ? Math.random() * H : -40;
+            this.r = Math.random() * 3 + 2;
+            this.vy = Math.random() * 0.3 + 0.15;
+            this.vx = (Math.random() - 0.5) * 0.2;
+            this.alpha = Math.random() * 0.6 + 0.2;
+            this.phase = Math.random() * Math.PI * 2;
+            this.hue = [217, 260, 190, 280][Math.floor(Math.random() * 4)];
+        }
+        update() {
+            this.x += this.vx + Math.sin(Date.now() * 0.001 + this.phase) * 0.3;
+            this.y += this.vy;
+            if (this.y > H + 60) this.reset(false);
+        }
+        draw() {
+            const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 5);
+            grd.addColorStop(0, `hsla(${this.hue}, 80%, 70%, ${this.alpha})`);
+            grd.addColorStop(0.4, `hsla(${this.hue}, 60%, 60%, ${this.alpha * 0.3})`);
+            grd.addColorStop(1, 'transparent');
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r * 5, 0, Math.PI * 2);
+            ctx.fillStyle = grd;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${this.hue}, 90%, 80%, ${this.alpha + 0.2})`;
+            ctx.fill();
+        }
+    }
+
+    // ── 穿越线 ──
+    class Streak {
+        constructor() {
+            this.reset();
+        }
+        reset() {
+            const side = Math.floor(Math.random() * 4);
+            if (side === 0) { this.x = Math.random() * W; this.y = -5; this.vx = 0; this.vy = 2 + Math.random() * 3; }
+            else if (side === 1) { this.x = Math.random() * W; this.y = H + 5; this.vx = 0; this.vy = -(2 + Math.random() * 3); }
+            else if (side === 2) { this.x = -5; this.y = Math.random() * H; this.vx = 2 + Math.random() * 3; this.vy = 0; }
+            else { this.x = W + 5; this.y = Math.random() * H; this.vx = -(2 + Math.random() * 3); this.vy = 0; }
+            this.len = 40 + Math.random() * 80;
+            this.hue = 217;
+            this.alpha = 0.15 + Math.random() * 0.2;
+        }
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            if (this.x < -120 || this.x > W + 120 || this.y < -120 || this.y > H + 120) this.reset();
+        }
+        draw() {
+            const angle = Math.atan2(this.vy, this.vx);
+            const ex = this.x - Math.cos(angle) * this.len;
+            const ey = this.y - Math.sin(angle) * this.len;
+            const grd = ctx.createLinearGradient(this.x, this.y, ex, ey);
+            grd.addColorStop(0, `hsla(${this.hue}, 80%, 70%, ${this.alpha})`);
+            grd.addColorStop(1, 'transparent');
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y);
+            ctx.lineTo(ex, ey);
+            ctx.strokeStyle = grd;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+    }
+
+    // ── 初始化 ──
+    const particleCount = 70;
+    for (let i = 0; i < particleCount; i++) particles.push(new Particle());
+    const orbs = []; for (let i = 0; i < 12; i++) orbs.push(new Orb());
+    const streaks = []; for (let i = 0; i < 5; i++) streaks.push(new Streak());
+
+    document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    document.addEventListener('mouseleave', () => { mouse.x = -999; mouse.y = -999; });
+
+    // ── 渲染循环 ──
+    function animate() {
+        resize();
+        ctx.clearRect(0, 0, W, H);
+
+        // 更新+绘制穿越线
+        streaks.forEach(s => { s.update(); s.draw(); });
+
+        // 更新+绘制粒子（画线条连接近距离的）
+        for (let i = 0; i < particles.length; i++) {
+            particles[i].update();
+            particles[i].draw();
+
+            // 连线：同色近距离粒子之间
+            for (let j = i + 1; j < particles.length; j++) {
+                const dx = particles[i].x - particles[j].x;
+                const dy = particles[i].y - particles[j].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const maxDist = 90;
+                if (dist < maxDist) {
+                    ctx.beginPath();
+                    ctx.moveTo(particles[i].x, particles[i].y);
+                    ctx.lineTo(particles[j].x, particles[j].y);
+                    const alpha = (1 - dist / maxDist) * 0.08;
+                    ctx.strokeStyle = `hsla(230, 60%, 60%, ${alpha})`;
+                    ctx.lineWidth = 0.6;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 绘制飘浮光点
+        orbs.forEach(o => { o.update(); o.draw(); });
+
+        // 鼠标吸引粒子
+        if (mouse.x > 0 && mouse.y > 0) {
+            const mx = mouse.x, my = mouse.y;
+            particles.forEach(p => {
+                const dx = p.x - mx, dy = p.y - my;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 180 && dist > 1) {
+                    const force = (1 - dist / 180) * 0.4;
+                    p.vx += (dx / dist) * force * 0.05;
+                    p.vy += (dy / dist) * force * 0.05;
+                    // 靠近鼠标的连线
+                    if (dist < 120) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(mx, my);
+                        ctx.strokeStyle = `hsla(217, 80%, 65%, ${(1 - dist / 120) * 0.12})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            });
+        }
+
+        requestAnimationFrame(animate);
+    }
+    animate();
+})();
+</script>
+
+</body>
+</html>
